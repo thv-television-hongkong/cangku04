@@ -79,14 +79,15 @@ def main():
     refund_form.update(reason='发布验证：补充原因后全额退款', requestKey=run + '-refund2')
     refund = call('/refunds', student, refund_form)
     rid = refund['refundId']
-    call(f'/finance/refunds/{rid}/audit', admin, {'result': 'PASS', 'opinion': '发布验证通过'})
+    approved = call(f'/finance/refunds/{rid}/audit', admin, {'result': 'PASS', 'opinion': '发布验证通过'})
     assert decimal.Decimal(str(call('/projects/1', student)['currentAmount'])) == before + decimal.Decimal('12.34')
     boundary = '----release' + run
     raw = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="test-refund.txt"\r\n'
         'Content-Type: text/plain\r\n\r\nInternal test refund receipt. No actual funds transferred.\r\n'
         f'--{boundary}--\r\n').encode()
     receipt = call('/file/upload', admin, raw=raw, mime='multipart/form-data; boundary=' + boundary)
-    complete = {'voucherFileId': receipt['fileId'], 'completeTime': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}
+    # Use the server's audit timestamp so the test is independent of the runner timezone.
+    complete = {'voucherFileId': receipt['fileId'], 'completeTime': approved['auditTime'].replace(' ', 'T')}
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: call(f'/finance/refunds/{rid}/complete', admin, complete), range(2)))
     assert decimal.Decimal(str(call('/projects/1', student)['currentAmount'])) == before

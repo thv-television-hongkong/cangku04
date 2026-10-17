@@ -2,7 +2,7 @@
 # =====================================================================================
 # 打包、安装、审批、提交链码 charity-cc（Go 语言）
 #   ./04-deploy-chaincode.sh [版本号] [序列号]
-# 默认：版本 1.1，序列号 2（与 database/data.sql 中 contract_record 记录一致）
+# 默认：版本 1.1，序列号 1（新通道首次部署）；升级时传入递增的序列号。
 # 背书策略：AND('Org1MSP.peer','Org2MSP.peer')
 # =====================================================================================
 set -euo pipefail
@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 CHANNEL_NAME=charitychannel
 CC_NAME=charity-cc
 CC_VERSION=${1:-1.1}
-CC_SEQUENCE=${2:-2}
+CC_SEQUENCE=${2:-1}
 CC_SRC_PATH=/opt/gopath/src/github.com/campus/charity-chaincode
 POLICY="AND('Org1MSP.peer','Org2MSP.peer')"
 

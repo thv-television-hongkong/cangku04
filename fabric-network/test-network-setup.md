@@ -63,7 +63,7 @@ bash scripts/02-network-up.sh
 bash scripts/03-create-channel.sh
 
 # 4. 打包 / 安装 / 审批 / 提交链码 charity-cc，并调用 InitLedger
-bash scripts/04-deploy-chaincode.sh 1.1 2
+bash scripts/04-deploy-chaincode.sh 1.1 1
 ```
 
 > Windows 用户请在 **WSL2 / Git Bash** 中执行以上脚本；`docker exec ... cli` 命令在 PowerShell 中亦可直接运行。
@@ -143,8 +143,9 @@ fabric:
 ```
 
 > 若无 Docker 环境，可设置 `fabric.enabled: false`，后端启用内置模拟联盟链
-> （MockEvidenceChainClient，链式哈希串联 + 多副本），接口返回结构与真实链完全一致，
-> 便于先完成业务联调，再切换到真实 Fabric 网络。
+> （MockChainClient，链式哈希串联 + 业务数据库快照），便于先完成业务联调。
+> MOCK 不具备独立于业务库的多节点共识保障。真实网络需要另外生成组织身份、部署链码，
+> 并配置 Gateway 连接与 TLS；本手册的真实网络未在此次公开发布中进行运行验收。
 
 ## 六、常见问题
 
