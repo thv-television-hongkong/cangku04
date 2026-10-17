@@ -1,0 +1,35 @@
+{
+  "name": "campus-charity-frontend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "校园公益众筹存证溯源系统 - Vue 3 + Element Plus",
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build",
+    "lint": "vue-cli-service lint"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "core-js": "^3.36.0",
+    "crypto-js": "^4.2.0",
+    "echarts": "^5.5.0",
+    "element-plus": "2.9.11",
+    "moment": "^2.30.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "vuex": "^4.1.0"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "~5.0.8",
+    "@vue/cli-service": "~5.0.8",
+    "@vue/compiler-sfc": "^3.5.13",
+    "sass": "^1.71.1",
+    "sass-loader": "^13.3.3",
+    "vue-loader": "^17.4.2"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}

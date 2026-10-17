@@ -1,0 +1,121 @@
+server:
+  port: 8080
+  address: 0.0.0.0
+  servlet:
+    context-path: /
+  tomcat:
+    threads:
+      max: 200          # 支持校园几十至上百用户并发访问
+      min-spare: 20
+    accept-count: 200
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/css,application/javascript
+
+spring:
+  application:
+    name: campus-charity-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=2000,expireAfterWrite=60s
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.campus.charity.module.**.entity
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: true
+    default-fetch-size: 100
+    default-statement-timeout: 30
+
+# ============================ 业务配置 ============================
+campus:
+  identity:
+    # 默认人工审核；个人启动脚本显式开启。关闭后测试认证不能作为正式认证使用。
+    test-mode: ${CAMPUS_IDENTITY_TEST_MODE:false}
+  web:
+    # Allow the Vue dev server from localhost and common private LAN ranges.
+    # The frontend proxy forwards the browser Origin to Spring Security.
+    allowed-origins: ${CAMPUS_ALLOWED_ORIGINS:http://localhost:9528,http://127.0.0.1:9528,http://10.*:9528,http://172.*:9528,http://192.168.*:9528}
+  jwt:
+    secret: ${CAMPUS_JWT_SECRET:campus-charity-dev-secret-change-in-production}
+    expire-minutes: 720          # 12 小时
+    header: Authorization
+    prefix: "Bearer "
+  file:
+    upload-path: ./upload
+    url-prefix: /api/file/download/
+    allowed-extensions: jpg,jpeg,png,gif,pdf,doc,docx,xls,xlsx,txt,zip
+    max-size-mb: 50
+  donation:
+    cancel-window-minutes: 120   # 限定时间内可取消捐赠（默认 2 小时）
+  backup:
+    enabled: true
+    cron: "0 0 2 * * ?"          # 每日 02:00
+    dir: ./backup
+    retention-days: 30
+    mysqldump-path: mysqldump
+    host: 127.0.0.1
+    port: 3306
+    database: campus_charity
+    username: root
+    password: 123456
+  init-default-users: true
+
+# ============================ Hyperledger Fabric ============================
+fabric:
+  # true：连接真实 Fabric 联盟链（需先启动 fabric-network）
+  # false：启用内置模拟联盟链（Mock），接口行为一致，便于无 Docker 环境开发联调
+  enabled: false
+  msp-id: Org1MSP
+  channel-name: charitychannel
+  chaincode-name: charity-cc
+  connection-profile: ../fabric-network/connection-org1.json
+  wallet-path: ../fabric-network/wallet
+  identity-label: admin
+  cert-path: ../fabric-network/organizations/peerOrganizations/org1.campus.edu/users/Admin@org1.campus.edu/msp/signcerts/Admin@org1.campus.edu-cert.pem
+  key-path: ../fabric-network/organizations/peerOrganizations/org1.campus.edu/users/Admin@org1.campus.edu/msp/keystore
+  evaluate-timeout-seconds: 10
+  endorse-timeout-seconds: 30
+  submit-timeout-seconds: 20
+  commit-status-timeout-seconds: 120
+
+# ============================ 接口文档 ============================
+knife4j:
+  enable: true
+  openapi:
+    title: 校园公益众筹存证溯源系统接口文档
+    description: 用户 / 项目 / 捐赠 / 存证 / 溯源 / 监管审计 全部接口
+    version: 1.0.0
+    group:
+      default:
+        group-name: 默认分组
+        api-rule: package
+        api-rule-resources:
+          - com.campus.charity.module
+
+logging:
+  level:
+    root: info
+    com.campus.charity: info
+    org.hyperledger.fabric: warn
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

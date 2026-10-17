@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/campus_charity?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 30        # 支撑上百并发
+      idle-timeout: 300000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+  sql:
+    init:
+      mode: never                  # 数据库脚本请手动执行 database/schema.sql 等
+
+campus:
+  file:
+    upload-path: ./upload
+  backup:
+    enabled: false                 # 开发环境默认关闭自动备份
+
+logging:
+  level:
+    com.campus.charity: info

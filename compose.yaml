@@ -1,0 +1,63 @@
+name: cangku04
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_DATABASE: campus_charity
+      MYSQL_USER: campus
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Run start-system to generate .env first}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Missing MySQL root password}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_general_ci"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/views.sql:/docker-entrypoint-initdb.d/02-views.sql:ro
+      - ./database/demo.sql:/docker-entrypoint-initdb.d/03-demo.sql:ro
+      - ./deploy/mysql-grants.sql:/docker-entrypoint-initdb.d/04-grants.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -h 127.0.0.1 -u campus -D campus_charity -N -e 'SELECT COUNT(*) FROM project' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 50
+      start_period: 30s
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: docker
+      DB_PASSWORD: ${DB_PASSWORD:?Missing database password}
+      CAMPUS_JWT_SECRET: ${CAMPUS_JWT_SECRET:?Missing JWT secret}
+      CAMPUS_IDENTITY_TEST_MODE: ${CAMPUS_IDENTITY_TEST_MODE:-true}
+      CAMPUS_ALLOWED_ORIGINS: ${CAMPUS_ALLOWED_ORIGINS:-http://localhost:9528,http://127.0.0.1:9528,http://10.*:9528,http://172.*:9528,http://192.168.*:9528}
+    volumes:
+      - uploaded_files:/data/campus-charity/upload
+      - database_backups:/data/campus-charity/backup
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/v3/api-docs"]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+      start_period: 45s
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-9528}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  mysql_data:
+  uploaded_files:
+  database_backups:

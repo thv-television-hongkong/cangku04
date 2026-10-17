@@ -1,0 +1,316 @@
+# =====================================================================================
+# 校园公益众筹存证溯源系统 - Hyperledger Fabric 2.4 测试网络
+# 拓扑：1 Orderer + 2 组织(Org1/Org2) + 4 Peer + 2 CouchDB + 2 CA
+#       背书策略 AND('Org1MSP.peer','Org2MSP.peer') —— 多参与方权限管控、多节点保存存证
+# 适用：普通 PC（建议 8G 内存以上）/ 学校实验室服务器 / 轻量云服务器
+#
+# 启动顺序见 fabric-network/test-network-setup.md
+# =====================================================================================
+version: '2.4'
+
+volumes:
+  orderer.campus.edu:
+  peer0.org1.campus.edu:
+  peer1.org1.campus.edu:
+  peer0.org2.campus.edu:
+  peer1.org2.campus.edu:
+  couchdb0.org1:
+  couchdb1.org1:
+  couchdb0.org2:
+  couchdb1.org2:
+
+networks:
+  charity:
+
+services:
+
+  # --------------------------------- 排序服务 ---------------------------------
+  orderer.campus.edu:
+    container_name: orderer.campus.edu
+    image: hyperledger/fabric-orderer:2.4
+    labels:
+      service: hyperledger-fabric
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+      - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+      - ORDERER_ADMIN_TLS_ENABLED=true
+      - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+      - ORDERER_OPERATIONS_LISTENADDRESS=0.0.0.0:17050
+      - ORDERER_METRICS_PROVIDER=prometheus
+    working_dir: /root
+    command: orderer
+    volumes:
+      - ./channel-artifacts/genesis.block:/var/hyperledger/orderer/orderer.genesis.block
+      - ./organizations/ordererOrganizations/campus.edu/orderers/orderer.campus.edu/msp:/var/hyperledger/orderer/msp
+      - ./organizations/ordererOrganizations/campus.edu/orderers/orderer.campus.edu/tls:/var/hyperledger/orderer/tls
+      - orderer.campus.edu:/var/hyperledger/production/orderer
+    ports:
+      - "7050:7050"
+      - "7053:7053"
+      - "17050:17050"
+    networks:
+      - charity
+
+  # --------------------------------- Org1 CouchDB ---------------------------------
+  couchdb0.org1:
+    container_name: couchdb0.org1.campus.edu
+    image: couchdb:3.2.2
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    ports:
+      - "5984:5984"
+    networks:
+      - charity
+
+  couchdb1.org1:
+    container_name: couchdb1.org1.campus.edu
+    image: couchdb:3.2.2
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    ports:
+      - "6984:5984"
+    networks:
+      - charity
+
+  # --------------------------------- Org1 Peer0 ---------------------------------
+  peer0.org1.campus.edu:
+    container_name: peer0.org1.campus.edu
+    image: hyperledger/fabric-peer:2.4
+    labels:
+      service: hyperledger-fabric
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer0.org1.campus.edu
+      - CORE_PEER_ADDRESS=peer0.org1.campus.edu:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.org1.campus.edu:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.campus.edu:8051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.campus.edu:7051
+      - CORE_PEER_LOCALMSPID=Org1MSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=charity
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb0.org1.campus.edu:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:17051
+      - CORE_METRICS_PROVIDER=prometheus
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_CHAINCODE_STARTUPTIMEOUT=300s
+    working_dir: /root
+    command: peer node start
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./organizations/peerOrganizations/org1.campus.edu/peers/peer0.org1.campus.edu/msp:/etc/hyperledger/fabric/msp
+      - ./organizations/peerOrganizations/org1.campus.edu/peers/peer0.org1.campus.edu/tls:/etc/hyperledger/fabric/tls
+      - peer0.org1.campus.edu:/var/hyperledger/production
+    ports:
+      - "7051:7051"
+      - "17051:17051"
+    depends_on:
+      - couchdb0.org1
+    networks:
+      - charity
+
+  # --------------------------------- Org1 Peer1 ---------------------------------
+  peer1.org1.campus.edu:
+    container_name: peer1.org1.campus.edu
+    image: hyperledger/fabric-peer:2.4
+    labels:
+      service: hyperledger-fabric
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer1.org1.campus.edu
+      - CORE_PEER_ADDRESS=peer1.org1.campus.edu:8051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:8051
+      - CORE_PEER_CHAINCODEADDRESS=peer1.org1.campus.edu:8052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:8052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org1.campus.edu:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.campus.edu:8051
+      - CORE_PEER_LOCALMSPID=Org1MSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=charity
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb1.org1.campus.edu:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:18051
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_CHAINCODE_STARTUPTIMEOUT=300s
+    working_dir: /root
+    command: peer node start
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./organizations/peerOrganizations/org1.campus.edu/peers/peer1.org1.campus.edu/msp:/etc/hyperledger/fabric/msp
+      - ./organizations/peerOrganizations/org1.campus.edu/peers/peer1.org1.campus.edu/tls:/etc/hyperledger/fabric/tls
+      - peer1.org1.campus.edu:/var/hyperledger/production
+    ports:
+      - "8051:8051"
+      - "18051:18051"
+    depends_on:
+      - couchdb1.org1
+    networks:
+      - charity
+
+  # --------------------------------- Org2 CouchDB ---------------------------------
+  couchdb0.org2:
+    container_name: couchdb0.org2.campus.edu
+    image: couchdb:3.2.2
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    ports:
+      - "7984:5984"
+    networks:
+      - charity
+
+  couchdb1.org2:
+    container_name: couchdb1.org2.campus.edu
+    image: couchdb:3.2.2
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    ports:
+      - "8984:5984"
+    networks:
+      - charity
+
+  # --------------------------------- Org2 Peer0 ---------------------------------
+  peer0.org2.campus.edu:
+    container_name: peer0.org2.campus.edu
+    image: hyperledger/fabric-peer:2.4
+    labels:
+      service: hyperledger-fabric
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer0.org2.campus.edu
+      - CORE_PEER_ADDRESS=peer0.org2.campus.edu:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.org2.campus.edu:9052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org2.campus.edu:10051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org2.campus.edu:9051
+      - CORE_PEER_LOCALMSPID=Org2MSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=charity
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb0.org2.campus.edu:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:19051
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_CHAINCODE_STARTUPTIMEOUT=300s
+    working_dir: /root
+    command: peer node start
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./organizations/peerOrganizations/org2.campus.edu/peers/peer0.org2.campus.edu/msp:/etc/hyperledger/fabric/msp
+      - ./organizations/peerOrganizations/org2.campus.edu/peers/peer0.org2.campus.edu/tls:/etc/hyperledger/fabric/tls
+      - peer0.org2.campus.edu:/var/hyperledger/production
+    ports:
+      - "9051:9051"
+      - "19051:19051"
+    depends_on:
+      - couchdb0.org2
+    networks:
+      - charity
+
+  # --------------------------------- Org2 Peer1 ---------------------------------
+  peer1.org2.campus.edu:
+    container_name: peer1.org2.campus.edu
+    image: hyperledger/fabric-peer:2.4
+    labels:
+      service: hyperledger-fabric
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer1.org2.campus.edu
+      - CORE_PEER_ADDRESS=peer1.org2.campus.edu:10051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:10051
+      - CORE_PEER_CHAINCODEADDRESS=peer1.org2.campus.edu:10052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:10052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org2.campus.edu:9051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org2.campus.edu:10051
+      - CORE_PEER_LOCALMSPID=Org2MSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=charity
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb1.org2.campus.edu:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:20051
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_CHAINCODE_STARTUPTIMEOUT=300s
+    working_dir: /root
+    command: peer node start
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./organizations/peerOrganizations/org2.campus.edu/peers/peer1.org2.campus.edu/msp:/etc/hyperledger/fabric/msp
+      - ./organizations/peerOrganizations/org2.campus.edu/peers/peer1.org2.campus.edu/tls:/etc/hyperledger/fabric/tls
+      - peer1.org2.campus.edu:/var/hyperledger/production
+    ports:
+      - "10051:10051"
+      - "20051:20051"
+    depends_on:
+      - couchdb1.org2
+    networks:
+      - charity
+
+  # --------------------------------- CLI（运维 / 链码安装）---------------------------------
+  cli:
+    container_name: cli
+    image: hyperledger/fabric-tools:2.4
+    tty: true
+    stdin_open: true
+    environment:
+      - GOPATH=/opt/gopath
+      - FABRIC_LOGGING_SPEC=INFO
+      - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+    command: /bin/bash
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../chaincode:/opt/gopath/src/github.com/campus/charity-chaincode
+      - ./organizations:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto
+      - ./scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+    networks:
+      - charity

@@ -1,0 +1,34 @@
+name: Build and verify demo
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chaincode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: chaincode/go.sum
+      - run: go test ./...
+        working-directory: chaincode
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start clean demo
+        run: bash start-system.sh
+      - name: Validate registration, test payment and refund
+        run: python3 scripts/release-smoke.py --allow-demo-writes
+      - name: Show service status
+        if: always()
+        run: docker compose ps && docker compose logs --tail 80
+      - name: Stop
+        if: always()
+        run: docker compose down

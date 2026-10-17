@@ -1,0 +1,105 @@
+// Uses only the explicitly configured isolated backend and a new isolated test project.
+const http = require('http')
+const fs = require('fs')
+const path = require('path')
+const assert = require('assert/strict')
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')
+const root = path.resolve(__dirname, '..')
+const dist = path.join(root, 'frontend/dist')
+const output = path.join(root, 'docs/verification-20261017')
+const projectId = Number(process.env.TEST_PROJECT_ID)
+if (!projectId || process.env.TEST_BACKEND_PORT !== '8081') throw new Error('Requires isolated TEST_PROJECT_ID and TEST_BACKEND_PORT=8081')
+const server = http.createServer((req, res) => {
+  if (req.url.startsWith('/api/')) {
+    const upstream = http.request({ hostname:'127.0.0.1', port:8081, path:req.url, method:req.method, headers:req.headers }, r => {res.writeHead(r.statusCode,r.headers);r.pipe(res)})
+    upstream.on('error', e => {res.writeHead(502);res.end(e.message)})
+    return req.pipe(upstream)
+  }
+  const file = path.resolve(dist, '.' + decodeURIComponent(req.url.split('?')[0] === '/' ? '/index.html' : req.url.split('?')[0]))
+  if (!file.startsWith(dist + path.sep) || !fs.existsSync(file)) {res.writeHead(404);return res.end()}
+  const types = {'.js':'application/javascript','.css':'text/css','.html':'text/html','.woff':'font/woff','.ttf':'font/ttf'}
+  res.setHeader('Content-Type',types[path.extname(file)] || 'application/octet-stream')
+  fs.createReadStream(file).pipe(res)
+})
+const url = 'http://127.0.0.1:9529'
+const findings = []
+async function action(page, suffix, click) {
+  const response = page.waitForResponse(r => r.url().endsWith(suffix) && r.request().method() === 'POST')
+  await click()
+  const data = await (await response).json()
+  assert.equal(data.code,200,JSON.stringify(data))
+  return data.data
+}
+async function login(browser, account) {
+  const context = await browser.newContext({viewport:{width:1440,height:960}})
+  const page = await context.newPage()
+  page.on('pageerror', e=>findings.push({error:e.message}))
+  await page.goto(url+'/#/login')
+  await page.locator('input').first().fill(account)
+  await page.locator('input[type=password]').first().fill('123456')
+  const result=await action(page,'/api/auth/login',()=>page.getByRole('button',{name:'登录',exact:true}).click())
+  await page.waitForURL(u=>!u.hash.startsWith('#/login'))
+  return {context,page,token:result.token}
+}
+async function upload(page) {
+  const response=page.waitForResponse(r=>r.url().includes('/api/file/upload')&&r.request().method()==='POST')
+  await page.locator('.el-dialog input[type=file]').setInputFiles({name:'simulated-voucher.txt',mimeType:'text/plain',buffer:Buffer.from('Isolated browser test simulated voucher; no real payment.')})
+  const data=await (await response).json();assert.equal(data.code,200)
+}
+;(async()=>{
+  await new Promise((resolve,reject)=>server.listen(9529,'127.0.0.1',resolve).on('error',reject))
+  const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXECUTABLE || undefined})
+  try {
+    const student=await login(browser,'20210001'),admin=await login(browser,'admin')
+    const s=student.page,a=admin.page
+    await s.goto(`${url}/#/donor/project/${projectId}`)
+    await s.locator('.detail-header').getByRole('button',{name:'我要捐赠',exact:true}).click()
+    await s.locator('.el-dialog input[role=spinbutton]').fill('12.34')
+    const order=await action(s,'/api/orders',()=>s.getByRole('button',{name:'创建订单',exact:true}).click())
+    await s.waitForURL('**/#/donor/orders')
+    let row=s.locator('.el-table__body tr').filter({hasText:order.orderNo})
+    await row.getByRole('button',{name:'模拟支付',exact:true}).click()
+    await action(s,`/api/orders/${order.orderId}/mock-pay`,()=>s.getByRole('button',{name:'模拟支付失败',exact:true}).click())
+    await row.getByText('模拟支付失败',{exact:true}).waitFor()
+    await row.getByRole('button',{name:'模拟支付',exact:true}).click()
+    assert.equal(await s.locator('.el-dialog:visible input[type=file]').count(),0)
+    await action(s,`/api/orders/${order.orderId}/mock-pay`,()=>s.getByRole('button',{name:'模拟支付成功',exact:true}).click())
+    await row.getByText('待财务确认',{exact:true}).waitFor()
+    findings.push({step:'create, failed payment, retry success',orderId:order.orderId})
+    await a.goto(url+'/#/admin/finance')
+    let ar=a.locator('.el-table__body tr').filter({hasText:order.orderNo})
+    await ar.getByRole('button',{name:'财务核对',exact:true}).click()
+    const download=a.waitForEvent('download')
+    await a.getByRole('button',{name:'下载当前支付凭证并核对'}).click()
+    assert.equal(await (await download).failure(),null)
+    const confirmed=await action(a,'/api/finance/confirmations',()=>a.getByRole('button',{name:'提交财务审核',exact:true}).click())
+    assert.ok(confirmed.donationId)
+    await ar.getByText('已确认捐赠',{exact:true}).waitFor()
+    findings.push({step:'voucher download and finance confirmation',donationId:confirmed.donationId})
+    await a.locator('.el-overlay:visible').waitFor({state:'hidden'})
+    await a.screenshot({path:path.join(output,'finance-flow-confirmed.png'),fullPage:true,animations:'disabled',style:'.el-message{visibility:hidden !important}'})
+    await s.goto(url+'/#/donor/donations')
+    const donationRow=s.locator('.el-table__body tr').filter({hasText:'浏览器闭环'})
+    await donationRow.getByRole('button',{name:'申请退款',exact:true}).first().click()
+    await s.locator('.el-dialog:visible textarea').fill('独立测试：全额模拟退款')
+    const refund=await action(s,'/api/refunds',()=>s.locator('.el-dialog:visible').getByRole('button',{name:'提交退款申请',exact:true}).click())
+    await a.goto(url+'/#/admin/refunds')
+    const refundRow=a.locator('.el-table__body tr').filter({hasText:refund.refundNo})
+    await refundRow.getByRole('button',{name:'审核',exact:true}).click()
+    await action(a,`/api/finance/refunds/${refund.refundId}/audit`,()=>a.locator('.el-dialog').getByRole('button',{name:'提交',exact:true}).click())
+    await refundRow.getByRole('button',{name:'登记完成',exact:true}).click()
+    await upload(a)
+    const completed=await action(a,`/api/finance/refunds/${refund.refundId}/complete`,()=>a.locator('.el-dialog').getByRole('button',{name:'提交',exact:true}).click())
+    assert.equal(completed.status,'REFUNDED')
+    await refundRow.getByText('已完成模拟退款',{exact:true}).waitFor()
+    findings.push({step:'full refund application, approval and completion',refundId:refund.refundId})
+    await a.locator('.el-overlay:visible').waitFor({state:'hidden'})
+    await a.screenshot({path:path.join(output,'finance-flow-refunded.png'),fullPage:true,animations:'disabled',style:'.el-message{visibility:hidden !important}'})
+    await s.goto(`${url}/#/donor/project/${projectId}`)
+    const p=await student.context.request.get(`${url}/api/projects/${projectId}`,{headers:{Authorization:'Bearer '+student.token}})
+    const details=await p.json();assert.equal(details.code,200);assert.equal(Number(details.data.currentAmount),0)
+    assert.equal(findings.filter(x=>x.error).length,0,JSON.stringify(findings))
+    fs.writeFileSync(path.join(output,'browser-finance-flow.json'),JSON.stringify({result:'PASS',projectId,findings},null,2))
+    console.log(JSON.stringify({result:'PASS',projectId,findings},null,2))
+  } finally {await browser.close();await new Promise(resolve=>{server.close(resolve);server.closeAllConnections()})}
+})().catch(e=>{console.error(e);server.close();process.exitCode=1})

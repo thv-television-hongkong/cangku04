@@ -1,0 +1,132 @@
+// Uses only the explicitly configured isolated backend and a new isolated test project.
+const http = require('http')
+const fs = require('fs')
+const path = require('path')
+const assert = require('assert/strict')
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')
+const root = path.resolve(__dirname, '..')
+const dist = path.join(root, 'frontend/dist')
+const output = path.resolve(root, process.env.VERIFICATION_OUTPUT || 'docs/verification-no-upload-20261017')
+fs.mkdirSync(output,{recursive:true})
+const projectId = Number(process.env.TEST_PROJECT_ID)
+if (!projectId || process.env.TEST_BACKEND_PORT !== '8081') throw new Error('Requires isolated TEST_PROJECT_ID and TEST_BACKEND_PORT=8081')
+const server = http.createServer((req, res) => {
+  if (req.url.startsWith('/api/')) {
+    const upstream = http.request({ hostname:'127.0.0.1', port:8081, path:req.url, method:req.method, headers:req.headers }, r => {res.writeHead(r.statusCode,r.headers);r.pipe(res)})
+    upstream.on('error', e => {res.writeHead(502);res.end(e.message)})
+    return req.pipe(upstream)
+  }
+  const file = path.resolve(dist, '.' + decodeURIComponent(req.url.split('?')[0] === '/' ? '/index.html' : req.url.split('?')[0]))
+  if (!file.startsWith(dist + path.sep) || !fs.existsSync(file)) {res.writeHead(404);return res.end()}
+  const types = {'.js':'application/javascript','.css':'text/css','.html':'text/html','.woff':'font/woff','.ttf':'font/ttf'}
+  res.setHeader('Content-Type',types[path.extname(file)] || 'application/octet-stream')
+  fs.createReadStream(file).pipe(res)
+})
+const url = 'http://127.0.0.1:9529'
+const findings = []
+async function action(page, suffix, click) {
+  const [response] = await Promise.all([page.waitForResponse(r => r.url().endsWith(suffix) && r.request().method() === 'POST'),click()])
+  const data = await response.json()
+  assert.equal(data.code,200,JSON.stringify(data))
+  console.log('PASS POST '+suffix)
+  return data.data
+}
+async function login(browser, account) {
+  const context = await browser.newContext({viewport:{width:1440,height:960}})
+  const page = await context.newPage()
+  page.on('pageerror', e=>findings.push({error:e.message}))
+  await page.goto(url+'/#/login')
+  await page.locator('input').first().fill(account)
+  await page.locator('input[type=password]').first().fill('123456')
+  const result=await action(page,'/api/auth/login',()=>page.getByRole('button',{name:'登录',exact:true}).click())
+  await page.waitForURL(u=>!u.hash.startsWith('#/login'))
+  return {context,page,token:result.token}
+}
+async function upload(page) {
+  const response=page.waitForResponse(r=>r.url().includes('/api/file/upload')&&r.request().method()==='POST')
+  await page.locator('.el-dialog input[type=file]').setInputFiles({name:'simulated-voucher.txt',mimeType:'text/plain',buffer:Buffer.from('Isolated browser test simulated voucher; no real payment.')})
+  const data=await (await response).json();assert.equal(data.code,200)
+}
+;(async()=>{
+  await new Promise((resolve,reject)=>server.listen(9529,'127.0.0.1',resolve).on('error',reject))
+  const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXECUTABLE || undefined})
+  try {
+    // Register through the real UI using a fresh isolated account and issued verification code.
+    const registration=await browser.newContext({viewport:{width:1440,height:1000}}), rp=await registration.newPage()
+    rp.on('pageerror',e=>findings.push({error:e.message}))
+    const account='ui'+Date.now()
+    await rp.goto(url+'/#/login');await rp.getByRole('tab',{name:'注册',exact:true}).click()
+    const reg=rp.locator('#pane-register'),inputs=reg.locator('input:not([type=radio])')
+    await inputs.nth(0).fill(account);await inputs.nth(1).fill('测试同学');await inputs.nth(2).fill(account)
+    await inputs.nth(5).fill('测试学院');await inputs.nth(6).fill('123456');await inputs.nth(7).fill('123456')
+    const code=await action(rp,'/api/auth/send-code',()=>reg.getByRole('button',{name:'获取验证码',exact:true}).click())
+    await inputs.nth(8).fill(code)
+    await action(rp,'/api/auth/register',()=>reg.getByRole('button',{name:'注册',exact:true}).click())
+    await registration.close()
+    const student=await login(browser,account),admin=await login(browser,'admin'),other=await login(browser,'20210001')
+    const s=student.page,a=admin.page
+    const api=async(actor,route,method='GET',data)=>{const r=await actor.context.request.fetch(url+'/api'+route,{method,headers:{Authorization:'Bearer '+actor.token},data});return r.json()}
+    const projectAmount=async expected=>{const r=await api(student,`/projects/${projectId}`);assert.equal(r.code,200);assert.equal(Number(r.data.currentAmount),expected)}
+    let blocked=await api(student,'/orders','POST',{projectId,amount:12.34,requestKey:'blocked-'+Date.now()});assert.notEqual(blocked.code,200)
+    await s.goto(url+'/#/donor/identity');await s.getByText('内部测试认证，不代表学校正式实名认证',{exact:true}).first().waitFor()
+    assert.equal(await s.locator('input[type=file]').count(),0)
+    const identityInputs=s.locator('.identity-workspace .el-form input[type=text]')
+    await identityInputs.nth(0).fill(account);await identityInputs.nth(1).fill('测试同学');await identityInputs.nth(2).fill('测试学院')
+    await s.locator('.el-checkbox').filter({hasText:'我确认以上信息仅用于内部测试认证'}).click()
+    await action(s,'/api/user/identity',()=>s.getByRole('button',{name:'确认并完成测试认证',exact:true}).click())
+    await s.locator('.identity-current').getByText('内部测试认证已完成',{exact:true}).waitFor()
+    let profile=await api(student,'/user/profile');assert.equal(profile.data.authStatus,2);assert.equal(profile.data.identityTestOnly,true)
+    await s.screenshot({path:path.join(output,'identity-test-certified.png'),fullPage:true,animations:'disabled'})
+    findings.push({step:'UI registration, no-document instant test identity, fresh profile sync',account})
+    await s.goto(`${url}/#/donor/project/${projectId}`)
+    await s.locator('.detail-header').getByRole('button',{name:'我要捐赠',exact:true}).click()
+    await s.locator('.el-dialog input[role=spinbutton]').fill('12.34')
+    const order=await action(s,'/api/orders',()=>s.getByRole('button',{name:'创建订单',exact:true}).click())
+    await s.waitForURL('**/#/donor/orders')
+    const row=s.locator('.el-table__body tr').filter({hasText:order.orderNo})
+    await row.getByRole('button',{name:'模拟支付',exact:true}).click()
+    await action(s,`/api/orders/${order.orderId}/mock-pay`,()=>s.getByRole('button',{name:'模拟支付失败',exact:true}).click())
+    await row.getByText('模拟支付失败',{exact:true}).waitFor();await projectAmount(0)
+    await row.getByRole('button',{name:'模拟支付',exact:true}).click();await s.locator('.el-dialog:visible').getByRole('button',{name:'模拟支付成功',exact:true}).waitFor();assert.equal(await s.locator('.el-dialog:visible input[type=file]').count(),0);assert.equal(await s.locator('.el-dialog:visible').getByText('凭证文件',{exact:true}).count(),0);await s.screenshot({path:path.join(output,'payment-no-upload.png'),fullPage:true,animations:'disabled',style:'.el-message{visibility:hidden !important}'})
+    await action(s,`/api/orders/${order.orderId}/mock-pay`,()=>s.getByRole('button',{name:'模拟支付成功',exact:true}).click())
+    await row.getByText('待财务确认',{exact:true}).waitFor();await projectAmount(0)
+    await a.goto(url+'/#/admin/finance');const ar=a.locator('.el-table__body tr').filter({hasText:order.orderNo})
+    await ar.getByRole('button',{name:'财务核对',exact:true}).click()
+    const download=a.waitForEvent('download');await a.getByRole('button',{name:'下载当前支付凭证并核对'}).click();const receiptDownload=await download;assert.equal(await receiptDownload.failure(),null);const receiptText=fs.readFileSync(await receiptDownload.path(),'utf8');assert.ok(receiptText.includes('内部测试'));assert.ok(receiptText.includes('未发生实际资金扣款'))
+    await a.locator('.el-dialog:visible .el-radio').filter({hasText:/^驳回$/}).click();await a.locator('.el-dialog textarea').fill('测试驳回：请补充支付说明')
+    await action(a,'/api/finance/confirmations',()=>a.getByRole('button',{name:'提交财务审核',exact:true}).click());await projectAmount(0)
+    await s.getByRole('button',{name:'刷新',exact:true}).click();await row.getByRole('button',{name:'重新提交审核',exact:true}).click()
+    await s.getByText('财务驳回原因：测试驳回：请补充支付说明',{exact:true}).waitFor();assert.equal(await s.locator('.el-dialog:visible input[type=file]').count(),0)
+    await s.locator('.el-dialog textarea').fill('补充测试支付说明')
+    await action(s,`/api/orders/${order.orderId}/resubmit`,()=>s.locator('.el-dialog:visible').getByRole('button',{name:'重新提交审核',exact:true}).click())
+    await a.getByRole('button',{name:'刷新',exact:true}).click();await ar.getByRole('button',{name:'财务核对',exact:true}).click()
+    const confirmed=await action(a,'/api/finance/confirmations',()=>a.getByRole('button',{name:'提交财务审核',exact:true}).click())
+    assert.ok(confirmed.donationId);await ar.getByText('已确认捐赠',{exact:true}).waitFor();await projectAmount(12.34)
+    await a.locator('.el-overlay:visible').waitFor({state:'hidden'});await a.screenshot({path:path.join(output,'finance-confirmed.png'),fullPage:true,animations:'disabled'})
+    findings.push({step:'no-upload payment failure/retry, automatic test receipt download, no-upload finance reject/resubmit/confirm',orderId:order.orderId,donationId:confirmed.donationId})
+    await s.goto(url+'/#/donor/donations');const donationRow=s.locator('.el-table__body tr').filter({hasText:'浏览器闭环'})
+    const apply=async reason=>{await donationRow.getByRole('button',{name:'申请退款',exact:true}).click();await s.locator('.el-dialog:visible').getByText('全额退款金额',{exact:true}).waitFor();await s.locator('.el-dialog:visible textarea').fill(reason);return action(s,'/api/refunds',()=>s.locator('.el-dialog:visible').getByRole('button',{name:'提交退款申请',exact:true}).click())}
+    const rejected=await apply('独立测试：申请全额退款');await a.goto(url+'/#/admin/refunds')
+    let refundRow=a.locator('.el-table__body tr').filter({hasText:rejected.refundNo});await refundRow.getByRole('button',{name:'审核',exact:true}).click()
+    await a.locator('.el-dialog:visible .el-radio').filter({hasText:/^驳回$/}).click();await a.locator('.el-dialog:visible textarea').fill('测试驳回：请完善退款原因')
+    await action(a,`/api/finance/refunds/${rejected.refundId}/audit`,()=>a.locator('.el-dialog:visible').getByRole('button',{name:'提交',exact:true}).click());await projectAmount(12.34)
+    await s.goto(url+'/#/donor/refunds');let sr=s.locator('.el-table__body tr').filter({hasText:rejected.refundNo});await sr.getByRole('button',{name:'详情',exact:true}).click()
+    await s.getByText('测试驳回：请完善退款原因',{exact:true}).waitFor();await s.getByRole('button',{name:'返回我的捐赠记录重新申请',exact:true}).click()
+    const refund=await apply('独立测试：补全原因后重新申请全额退款')
+    await a.getByRole('button',{name:'刷新',exact:true}).click();refundRow=a.locator('.el-table__body tr').filter({hasText:refund.refundNo});await refundRow.getByRole('button',{name:'审核',exact:true}).click()
+    await action(a,`/api/finance/refunds/${refund.refundId}/audit`,()=>a.locator('.el-dialog:visible').getByRole('button',{name:'提交',exact:true}).click());await projectAmount(12.34)
+    await refundRow.getByRole('button',{name:'登记完成',exact:true}).click();await upload(a)
+    const completed=await action(a,`/api/finance/refunds/${refund.refundId}/complete`,()=>a.locator('.el-dialog:visible').getByRole('button',{name:'提交',exact:true}).click())
+    assert.equal(completed.status,'REFUNDED');assert.ok(['PENDING','SUBMITTED'].includes(completed.evidenceStatus));await refundRow.getByText('已完成模拟退款',{exact:true}).waitFor();await projectAmount(0)
+    await a.locator('.el-overlay:visible').waitFor({state:'hidden'});await a.screenshot({path:path.join(output,'refund-completed.png'),fullPage:true,animations:'disabled'})
+    await s.goto(url+'/#/donor/orders');await row.getByText('已完成模拟退款',{exact:true}).waitFor();await s.goto(url+'/#/donor/donations');await donationRow.getByText('已退款',{exact:true}).waitFor();assert.equal(await donationRow.getByRole('button',{name:'申请退款',exact:true}).count(),0)
+    await s.reload();await donationRow.getByText('已退款',{exact:true}).waitFor()
+    const deniedOrder=await api(other,`/orders/${order.orderId}`),deniedRefund=await api(other,`/refunds/${refund.refundId}`)
+    assert.notEqual(deniedOrder.code,200);assert.notEqual(deniedRefund.code,200)
+    findings.push({step:'refund rejection, reason visible, reapply, review, completion, synchronized orders/donations, refresh, ownership denial',refundId:refund.refundId,amountAfterCompletion:0})
+    for(let i=0;i<20;i++){const r=await api(student,`/refunds/${refund.refundId}`);if(r.data.evidenceStatus==='SUBMITTED'){findings.push({step:'refund evidence processed',status:r.data.evidenceStatus,txId:r.data.evidenceTxId});break}await s.waitForTimeout(500)}
+    assert.equal(findings.filter(x=>x.error).length,0,JSON.stringify(findings))
+    fs.writeFileSync(path.join(output,'browser-finance-flow.json'),JSON.stringify({result:'PASS',projectId,findings},null,2))
+    console.log(JSON.stringify({result:'PASS',projectId,findings},null,2))
+  } catch(e) {for(const c of browser.contexts()){for(const p of c.pages()){await p.screenshot({path:path.join(output,`failure-${browser.contexts().indexOf(c)}.png`),fullPage:true}).catch(()=>{})}}throw e} finally {await browser.close();await new Promise(resolve=>{server.close(resolve);server.closeAllConnections()})}
+})().then(()=>process.exit(0)).catch(e=>{console.error(e);server.closeAllConnections();server.close();process.exit(1)})

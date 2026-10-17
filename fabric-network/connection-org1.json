@@ -1,0 +1,114 @@
+{
+  "name": "campus-charity-network-org1",
+  "version": "1.0.0",
+  "description": "校园公益众筹存证溯源系统 - Org1（校方公益管理）Fabric Gateway 连接配置",
+  "client": {
+    "organization": "Org1",
+    "connection": {
+      "timeout": {
+        "peer": {
+          "endorser": "300"
+        },
+        "orderer": "300"
+      }
+    }
+  },
+  "organizations": {
+    "Org1": {
+      "mspid": "Org1MSP",
+      "peers": [
+        "peer0.org1.campus.edu",
+        "peer1.org1.campus.edu"
+      ],
+      "certificateAuthorities": [
+        "ca.org1.campus.edu"
+      ]
+    },
+    "Org2": {
+      "mspid": "Org2MSP",
+      "peers": [
+        "peer0.org2.campus.edu",
+        "peer1.org2.campus.edu"
+      ],
+      "certificateAuthorities": [
+        "ca.org2.campus.edu"
+      ]
+    }
+  },
+  "peers": {
+    "peer0.org1.campus.edu": {
+      "url": "grpcs://localhost:7051",
+      "tlsCACerts": {
+        "path": "organizations/peerOrganizations/org1.campus.edu/peers/peer0.org1.campus.edu/tls/ca.crt"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer0.org1.campus.edu",
+        "hostnameOverride": "peer0.org1.campus.edu"
+      }
+    },
+    "peer1.org1.campus.edu": {
+      "url": "grpcs://localhost:8051",
+      "tlsCACerts": {
+        "path": "organizations/peerOrganizations/org1.campus.edu/peers/peer1.org1.campus.edu/tls/ca.crt"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer1.org1.campus.edu",
+        "hostnameOverride": "peer1.org1.campus.edu"
+      }
+    },
+    "peer0.org2.campus.edu": {
+      "url": "grpcs://localhost:9051",
+      "tlsCACerts": {
+        "path": "organizations/peerOrganizations/org2.campus.edu/peers/peer0.org2.campus.edu/tls/ca.crt"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer0.org2.campus.edu",
+        "hostnameOverride": "peer0.org2.campus.edu"
+      }
+    },
+    "peer1.org2.campus.edu": {
+      "url": "grpcs://localhost:10051",
+      "tlsCACerts": {
+        "path": "organizations/peerOrganizations/org2.campus.edu/peers/peer1.org2.campus.edu/tls/ca.crt"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer1.org2.campus.edu",
+        "hostnameOverride": "peer1.org2.campus.edu"
+      }
+    }
+  },
+  "orderers": {
+    "orderer.campus.edu": {
+      "url": "grpcs://localhost:7050",
+      "tlsCACerts": {
+        "path": "organizations/ordererOrganizations/campus.edu/orderers/orderer.campus.edu/msp/tlscacerts/tlsca.campus.edu-cert.pem"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "orderer.campus.edu",
+        "hostnameOverride": "orderer.campus.edu"
+      }
+    }
+  },
+  "certificateAuthorities": {
+    "ca.org1.campus.edu": {
+      "url": "https://localhost:7054",
+      "caName": "ca-org1",
+      "tlsCACerts": {
+        "path": "organizations/peerOrganizations/org1.campus.edu/ca/ca.org1.campus.edu-cert.pem"
+      },
+      "httpOptions": {
+        "verify": false
+      }
+    },
+    "ca.org2.campus.edu": {
+      "url": "https://localhost:9054",
+      "caName": "ca-org2",
+      "tlsCACerts": {
+        "path": "organizations/peerOrganizations/org2.campus.edu/ca/ca.org2.campus.edu-cert.pem"
+      },
+      "httpOptions": {
+        "verify": false
+      }
+    }
+  }
+}

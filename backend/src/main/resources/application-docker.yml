@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://mysql:3306/campus_charity?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: campus
+    password: ${DB_PASSWORD}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 30
+  sql:
+    init:
+      mode: never
+campus:
+  init-default-users: false
+  jwt:
+    secret: ${CAMPUS_JWT_SECRET}
+  file:
+    upload-path: /data/campus-charity/upload
+  backup:
+    enabled: true
+    dir: /data/campus-charity/backup
+    mysqldump-path: mysqldump
+    host: mysql
+    port: 3306
+    database: campus_charity
+    username: campus
+    password: ${DB_PASSWORD}
+fabric:
+  enabled: false

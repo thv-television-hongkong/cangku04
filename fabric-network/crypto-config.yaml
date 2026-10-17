@@ -1,0 +1,39 @@
+# =====================================================================================
+# cryptogen 身份配置：1 Orderer 组织 + 2 Peer 组织（Org1 校方、Org2 监管/审计方）
+# 生成命令：cryptogen generate --config=./crypto-config.yaml --output=./organizations
+# =====================================================================================
+
+OrdererOrgs:
+  - Name: Orderer
+    Domain: campus.edu
+    EnableNodeOUs: true
+    Specs:
+      - Hostname: orderer
+        SANS:
+          - localhost
+          - 127.0.0.1
+
+PeerOrgs:
+  # Org1：学校公益管理部门 + 社团（项目发起、捐赠、凭证上传）
+  - Name: Org1
+    Domain: org1.campus.edu
+    EnableNodeOUs: true
+    Template:
+      Count: 2
+      SANS:
+        - localhost
+        - 127.0.0.1
+    Users:
+      Count: 2
+
+  # Org2：监管审计部门 + 校方财务（存证核验、资金追踪、审计）
+  - Name: Org2
+    Domain: org2.campus.edu
+    EnableNodeOUs: true
+    Template:
+      Count: 2
+      SANS:
+        - localhost
+        - 127.0.0.1
+    Users:
+      Count: 2

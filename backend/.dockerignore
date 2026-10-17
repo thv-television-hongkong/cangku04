@@ -1,0 +1,6 @@
+target
+upload
+backup
+logs
+*.log
+.env

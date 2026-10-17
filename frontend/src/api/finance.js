@@ -1,0 +1,18 @@
+import request from '@/utils/request'
+export const requestKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+export const createOrder = data => request({ url: '/orders', method: 'post', data })
+export const listOrders = (params, finance = false) => request({ url: finance ? '/finance/orders' : '/orders/mine', params })
+export const orderDetail = id => request({ url: `/orders/${id}` })
+export const mockPay = (id, data) => request({ url: `/orders/${id}/mock-pay`, method: 'post', data })
+export const resubmitOrder = (id, data) => request({ url: `/orders/${id}/resubmit`, method: 'post', data })
+export const confirmOrder = data => request({ url: '/finance/confirmations', method: 'post', data })
+export const applyRefund = data => request({ url: '/refunds', method: 'post', data })
+export const listRefunds = (params, finance = false) => request({ url: finance ? '/finance/refunds' : '/refunds/mine', params })
+export const refundDetail = id => request({ url: `/refunds/${id}` })
+export const auditRefund = (id, data) => request({ url: `/finance/refunds/${id}/audit`, method: 'post', data })
+export const completeRefund = (id, data) => request({ url: `/finance/refunds/${id}/complete`, method: 'post', data })
+export const listTasks = params => request({ url: '/admin/evidence/tasks', params })
+export const retryTask = id => request({ url: `/admin/evidence/tasks/${id}/retry`, method: 'post' })
+export const evidenceLabel = s => ({ NOT_REQUIRED:'尚未生成存证任务', PENDING:'存证处理中', PROCESSING:'存证处理中', SUBMITTING:'存证处理中', SUBMITTED:'存证已提交', FAILED:'存证失败，待管理员重试' }[s] || s || '尚未生成存证任务')
+export const orderNextStep = s => ({ CREATED:'可直接选择模拟支付成功或失败，无需上传凭证文件。', PAY_FAILED:'支付失败未入账，可直接重试模拟支付。', WAIT_CONFIRM:'等待学校财务核对凭证和金额，此时尚未计入项目筹款。', FINANCE_REJECTED:'查看下方驳回原因，补充说明后重新提交财务审核，无需上传文件。', CONFIRMED:'已生成有效捐赠，可在我的捐赠记录查看存证或申请全额测试退款。', REFUNDING:'已申请退款，请在退款申请记录查看学校审核及完成登记进度。', REFUNDED:'全额测试退款已登记完成，项目净筹款已扣减，退款存证独立处理。' }[s] || '')
+export const statusLabel = s => ({ CREATED: '待模拟支付', PAY_FAILED: '模拟支付失败', WAIT_CONFIRM: '待财务确认', FINANCE_REJECTED: '财务已驳回', CONFIRMED: '已确认捐赠', REFUNDING: '退款处理中', PENDING: '待审核', WAIT_REFUND: '待登记退款完成', REJECTED: '已驳回', REFUNDED: '已完成模拟退款', SUBMITTED: '存证已提交', FAILED: '存证失败，可重试' }[s] || s)

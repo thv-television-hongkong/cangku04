@@ -1,0 +1,39 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/campus_charity?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:campus_charity}
+    password: ${DB_PASSWORD:change-me}
+    hikari:
+      minimum-idle: 10
+      maximum-pool-size: 50
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=5000,expireAfterWrite=120s
+
+fabric:
+  enabled: true                       # 生产环境启用真实 Fabric 联盟链
+
+campus:
+  web:
+    allowed-origins: ${CAMPUS_ALLOWED_ORIGINS}
+  init-default-users: false
+  jwt:
+    # 生产环境必须通过环境变量注入，禁止使用开发环境密钥。
+    secret: ${CAMPUS_JWT_SECRET}
+  file:
+    upload-path: /data/campus-charity/upload
+  backup:
+    enabled: true
+    dir: /data/campus-charity/backup
+
+logging:
+  level:
+    root: warn
+    com.campus.charity: info
+  file:
+    name: ./logs/campus-charity.log
